@@ -1,0 +1,19 @@
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        racket-version: ['8.9', '8.10', 'current']
+        racket-variant: ['BC', 'CS']
+    name: Build & Test on Racket ${{ matrix.racket-version }} (${{ matrix.racket-variant }})
+    steps:
+      - uses: actions/checkout@master
+      - uses: Bogdanp/setup-racket@v1.10
+        with:
+          architecture: x64
+          variant: ${{ matrix.racket-variant }}
+          version: ${{ matrix.racket-version }}
+      - run: raco pkg install --batch --auto http-proxy{-lib,-test,}/
+      - run: raco test http-proxy-test/
