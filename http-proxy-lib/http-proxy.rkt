@@ -10,19 +10,24 @@
   [start-http-proxy
    (->* ()
         (#:host (or/c #f string?)
-         #:port port/c
+         #:port (integer-in 0 65535)
          #:ssl-ctx (or/c #f ssl-server-context?)
-         (-> string? port/c string? port/c (listof bytes?) bytes?))
+         #:port-ch (channel/c port/c)
+         (-> string? port/c
+             string? port/c
+             (listof bytes?)
+             bytes?))
         (-> void?))]))
 
 (define port/c
-  (integer-in 0 65535))
+  (integer-in 1 65535))
 
 (define-logger http-proxy)
 
 (define (start-http-proxy #:host [host "127.0.0.1"]
                           #:port [port 1080]
                           #:ssl-ctx [ssl-ctx #f]
+                          #:port-ch [port-ch #f]
                           [handler (λ (_src-host _src-port _dst-host _dst-port _headers) #"200 OK")])
   (define cust
     (make-custodian))
@@ -35,7 +40,9 @@
           (if ssl-ctx
               (values (ssl-listen port 512 #t host ssl-ctx) ssl-accept ssl-close ssl-addresses)
               (values (tcp-listen port 512 #t host) tcp-accept tcp-close tcp-addresses)))
-        (log-http-proxy-debug "proxy started")
+        (define-values (local-host local-port _remote-host _remote-port)
+          (addresses listener #t))
+        (log-http-proxy-debug "proxy listening on ~a:~a" local-host local-port)
         (thread
          (lambda ()
            (define buf
@@ -46,6 +53,8 @@
            (define (read-http-line* in)
              (define line (read-http-line in))
              (and line (bytes->string/utf-8 line #\uFFD)))
+           (when port-ch
+             (channel-put port-ch local-port))
            (let loop ([accepting? #t]
                       [in-progress null])
              (when (or accepting? (not (null? in-progress)))
@@ -76,7 +85,7 @@
                           (match (read-http-line* src-in)
                             [(regexp #rx"CONNECT ([^:]+):([^ ]+) HTTP/1.1"
                                      (list _ dst-host (app string->number dst-port)))
-                             #:when dst-port
+                             #:when (and dst-port (> dst-port 0))
                              (log-http-proxy-debug
                               "CONNECT ~a:~a -> ~a:~a"
                               src-host src-port dst-host dst-port)
@@ -150,7 +159,8 @@
                  (read-bytes! bs in 0 end-pos))]))])))
 
 (define (pipe in out)
-  (define buf (make-bytes (* 16 1024)))
+  (define buf
+    (make-bytes (* 16 1024)))
   (let loop ()
     (sync
      (handle-evt (port-closed-evt out) void)
