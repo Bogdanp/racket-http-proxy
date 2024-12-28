@@ -1,22 +1,22 @@
 #lang racket/base
 
 (require openssl
-         racket/contract
+         racket/contract/base
          racket/match
          racket/tcp)
 
 (provide
  (contract-out
   [start-http-proxy
-   (->* ()
-        (#:host (or/c #f string?)
+   (->* []
+        [#:host (or/c #f string?)
          #:port (integer-in 0 65535)
          #:ssl-ctx (or/c #f ssl-server-context?)
          #:port-ch (channel/c port/c)
          (-> string? port/c
              string? port/c
              (listof bytes?)
-             bytes?))
+             bytes?)]
         (-> void?))]))
 
 (define port/c
